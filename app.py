@@ -10,10 +10,14 @@ from datetime import datetime
 from time import sleep, perf_counter
 from PyQt5.QtWidgets import QMainWindow, QMessageBox, QListWidgetItem
 from PyQt5.QtCore import QThread, pyqtSignal, Qt
+from PyQt5 import QtMultimedia
 
 from AsyncProcessPack import AsyncProcess
 from MessagePack import print_info_msg
 from WinSoundPack import beep
+
+START_BT_SOUND = "Sound/battery-check_2.wav"
+STOP_BT_SOUND = "Sound/battery-check_4.wav"
 
 
 class QTTimer(QThread):
@@ -34,8 +38,10 @@ class QTTimer(QThread):
             delta = perf_counter() - self.last_time
             if delta > 5:
                 # sleep mode detected
-                self.app.sleep = True
-                self.app.close()
+                # self.app.sleep = True
+                # self.app.close()
+                self.app.on_sleep()
+                break
             # timer
             time = perf_counter() - self.start_time
             self.app.timeLabel.setText(self.app.convert_sec_to_time_string(time))
@@ -92,10 +98,12 @@ class MainWindow(QMainWindow, design.Ui_MainWindow):
 
         self.setWindowTitle(marker)  # Устанавливаем заголовок окна
         self.setWindowIcon(QtGui.QIcon('Images/Battery-Check.ico'))
+        self.testNumLabel.setText('_')
         self.startInLabel.setText('00:00:0000 00:00')
         self.timeLabel.setText('00:00:00')
         self.startButton.clicked.connect(self._start_click)
-        self.statusBar().showMessage("---created by AlGorodetskiy---v 1.0---")
+        self.statusBar().showMessage("---created by AlGorodetskiy---v 1.1---")
+        self.label_2.setPixmap(QtGui.QPixmap(os.path.join(os.getcwd(), "Images/laptop-battery.png")))
 
     @property
     def run(self):
@@ -116,7 +124,9 @@ class MainWindow(QMainWindow, design.Ui_MainWindow):
             self._stop_click()
             return
         print('start')
+        self._play_sound(START_BT_SOUND)
         self._run = True
+        self.sleep = False
         # no sleep mode
         subprocess.call("powercfg -change -monitor-timeout-ac 0")
         subprocess.call("powercfg -change -disk-timeout-ac 0")
@@ -127,16 +137,28 @@ class MainWindow(QMainWindow, design.Ui_MainWindow):
         self.timer = QTTimer(self)
         self.timer.start()
         # set ui data
-        AsyncProcess('reset UI', self._reset_ui, 1, (self, '_end_reset_ui'))
+        # AsyncProcess('reset UI', self._reset_ui, 1, (self, '_end_reset_ui'))
+        AsyncProcess('start timeout', self._start_timeout, 1)
+
+        self._check_dir()
+        self._create_file()
+        self.start = datetime.now().strftime('%H:%M:%S')
 
     def _stop_click(self):
         print('stop')
-        beep()
+        self._play_sound(STOP_BT_SOUND)
         self._run = False
         self.startButton.setText('Start')
+        self.testNumLabel.setText('_')
         self.startInLabel.setText('00:00:0000 00:00')
         self.timeLabel.setText('00:00:00')
         self._delete_file()
+
+    def on_sleep(self):
+        print('sleep mode')
+        self._run = False
+        self.startButton.setText('Start')
+        self._file_name = None
 
     def closeEvent(self, event):
         print('close event')
@@ -158,19 +180,23 @@ class MainWindow(QMainWindow, design.Ui_MainWindow):
         self._interval_timer.add_time(self._interval)
         self._interval_timer.start()
 
-    def _reset_ui(self):
+    # def _reset_ui(self):
+    #     self._check_dir()
+    #     self._create_file()
+    #
+    # def _end_reset_ui(self):
+    #     self._run_app()
+
+    def _start_timeout(self):
+        self.startButton.setDisabled(True)
+        sleep(2)
+        self.startButton.setDisabled(False)
         self.startButton.setText('Stop')
-        self._check_dir()
-        self._create_file()
 
-    def _end_reset_ui(self):
-        self._run_app()
-
-    def _run_app(self):
-        if not self._run:
-            return
-        beep()
-        self.start = datetime.now().strftime('%H:%M:%S')
+    # def _run_app(self):
+    #     if not self._run:
+    #         return
+    #     self.start = datetime.now().strftime('%H:%M:%S')
 
     def check_time(self):
         sleep(1)
@@ -193,6 +219,7 @@ class MainWindow(QMainWindow, design.Ui_MainWindow):
         return name
 
     def _check_dir(self):
+        self._dir_files = []
         path = os.getcwd()
         print(os.listdir(path))
         for file in os.listdir(path):
@@ -214,6 +241,7 @@ class MainWindow(QMainWindow, design.Ui_MainWindow):
     def _create_file(self):
         if self._file_name is None:
             self.num = self._get_file_num()
+            self.testNumLabel.setText(f"{self.num}")
             path = os.getcwd()
             now = datetime.now().strftime('%H:%M:%S')
             self._file_name = f"{self.num}_{now.split(':')[0]}-{now.split(':')[1]}--.txt"
@@ -223,5 +251,11 @@ class MainWindow(QMainWindow, design.Ui_MainWindow):
     def _delete_file(self):
         path = os.getcwd()
         os.remove(join(path, self._file_name))
+        self._file_name = None
+
+    @classmethod
+    def _play_sound(cls, sound):
+        filename = os.path.join(os.getcwd(), sound)
+        QtMultimedia.QSound.play(filename)
 
 
